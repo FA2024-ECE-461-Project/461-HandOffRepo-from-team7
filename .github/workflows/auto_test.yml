@@ -19,7 +19,7 @@ jobs:   # run tests specified in test/
           node-version: '18.17.1' # specify the Node.js version: same version as eceprog
 
       - name: Install dependencies
-        run: npm install
+        run: ./run test
         
       - name: Setup environment
         # $GITHUB_ENV: .env file for github actions, this step configures LOG_FILE env variable

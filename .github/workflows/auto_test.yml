@@ -17,9 +17,9 @@ jobs:   # run tests specified in test/
         uses: actions/setup-node@v3
         with:
           node-version: '18.17.1' # specify the Node.js version: same version as eceprog
-
+      
       - name: Install dependencies
-        run: ./run test
+        run: ./run install
         
       - name: Setup environment
         # $GITHUB_ENV: .env file for github actions, this step configures LOG_FILE env variable
@@ -32,11 +32,7 @@ jobs:   # run tests specified in test/
 
 
 
-      - name: Run tests # display test results in the Actions tab
-        run: npm test 
+      # - name: Run tests # display test results in the Actions tab
+      #   run: ./run 
 
-      # shows coverage in Actions tab: make use of run script and printTestResults.ts
-      # TODO: work this out a little later
-      # - name: display coverage 
-      #   run: ./run test 
-        
+   

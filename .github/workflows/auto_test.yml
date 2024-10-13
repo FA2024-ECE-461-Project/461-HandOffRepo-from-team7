@@ -1,3 +1,5 @@
+name: run unit-tests
+
 on:
   push:
     branches:
@@ -32,7 +34,7 @@ jobs:   # run tests specified in test/
 
 
 
-      # - name: Run tests # display test results in the Actions tab
-      #   run: ./run 
+      - name: Run tests # display test results in the Actions tab
+        run: ./run test
 
    

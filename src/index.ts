@@ -13,6 +13,7 @@ import { get_license_compatibility } from './metrics/license-compatibility';
 import { get_ramp_up_time_metric } from './metrics/ramp-up-time';
 import { calculateResponsiveness } from './metrics/responsiveness';
 import { calculatePRCodeReviews } from './metrics/PRCodeReviews';
+import { getDependencyPinningFraction } from './metrics/dependency'; // Adjust the path accordingly
 import logger from './logger';
 import { promisify } from 'util';
 
@@ -33,6 +34,8 @@ interface MetricsResult {
   License_Latency: number;
   PR_Code_Reviews: number;
   PR_Code_Reviews_Latency: number;
+  DependencyMetric: number;
+  DependencyMetric_Latency: number;
 }
 
 async function cloneRepository(url: string, dir: string): Promise<void> {
@@ -114,14 +117,16 @@ async function getMetrics(url: string, cloneDir: string): Promise<MetricsResult>
       licenseCompatibility,
       rampUpTime,
       responsivenessResult,
-      PRCodeReviewsResult
+      PRCodeReviewsResult,
+      DependencyResult
     ] = await Promise.all([
       getCorrectnessMetric(url),
       get_bus_factor(url),
       get_license_compatibility(cloneDir),
       get_ramp_up_time_metric(url),
       calculateResponsiveness(url),
-      calculatePRCodeReviews(url)
+      calculatePRCodeReviews(url),
+      getDependencyPinningFraction(url)
     ]);
 
     const endTime = Date.now();
@@ -133,7 +138,8 @@ async function getMetrics(url: string, cloneDir: string): Promise<MetricsResult>
       licenseCompatibility.score,
       rampUpTime.score,
       responsivenessResult.score,
-      PRCodeReviewsResult.score
+      PRCodeReviewsResult.score,
+      DependencyResult.score
     );
 
     logger.info('Metrics calculated', { 
@@ -145,7 +151,8 @@ async function getMetrics(url: string, cloneDir: string): Promise<MetricsResult>
       license: licenseCompatibility.score,
       rampUp: rampUpTime.score,
       responsiveness: responsivenessResult.score,
-      PRCodeReviewsResult: PRCodeReviewsResult.score
+      PRCodeReviewsResult: PRCodeReviewsResult.score,
+      Dependency: DependencyResult.score
     });
 
     return {
@@ -163,21 +170,24 @@ async function getMetrics(url: string, cloneDir: string): Promise<MetricsResult>
       License: licenseCompatibility.score,
       License_Latency: licenseCompatibility.latency,
       PR_Code_Reviews: PRCodeReviewsResult.score,
-      PR_Code_Reviews_Latency: PRCodeReviewsResult.latency
+      PR_Code_Reviews_Latency: PRCodeReviewsResult.latency,
+      DependencyMetric: DependencyResult.score,
+      DependencyMetric_Latency: DependencyResult.latency
     };
   } catch (error) {
     logger.error(`Error calculating metrics for ${url}:`, error);
     return createEmptyMetricsResult(url);
   }
 }
-function calculateNetScore(correctness: number, busFactor: number, license: number, rampUp: number, responsiveness: number, prCodeReviews: number): number {
+function calculateNetScore(correctness: number, busFactor: number, license: number, rampUp: number, responsiveness: number, prCodeReviews: number, dependency: number): number {
   const weights = {
     correctness: 0.2,
     busFactor: 0.2,
     responsiveness: 0.2,
     rampUp: 0.2,
     license: 0.1,
-    prCodeReviews: 0.1
+    prCodeReviews: 0.05,
+    dependency: 0.05
   };
 
   return (
@@ -186,7 +196,8 @@ function calculateNetScore(correctness: number, busFactor: number, license: numb
     responsiveness * weights.responsiveness +
     rampUp * weights.rampUp +
     license * weights.license + 
-    prCodeReviews * weights.prCodeReviews
+    prCodeReviews * weights.prCodeReviews +
+    dependency * weights.dependency
   );
 }
 
@@ -206,7 +217,9 @@ function createEmptyMetricsResult(url: string): MetricsResult {
     License: 0,
     License_Latency: 0,
     PR_Code_Reviews: 0,
-    PR_Code_Reviews_Latency: 0
+    PR_Code_Reviews_Latency: 0,
+    DependencyMetric: 0,
+    DependencyMetric_Latency: 0
   };
 }
 
@@ -252,7 +265,9 @@ program
             License: parseFloat(result.License.toFixed(3)),
             License_Latency: parseFloat((result.License_Latency / 1000).toFixed(3)),
             PR_Code_Reviews: parseFloat(result.PR_Code_Reviews.toFixed(3)),
-            PR_Code_Reviews_Latency: parseFloat((result.PR_Code_Reviews_Latency / 1000).toFixed(3))
+            PR_Code_Reviews_Latency: parseFloat((result.PR_Code_Reviews_Latency / 1000).toFixed(3)),
+            DependencyMectric: parseFloat(result.DependencyMetric.toFixed(3)),
+            DependencyNetric_Latency: parseFloat((result.DependencyMetric_Latency / 1000).toFixed(3))
           };
           console.log(JSON.stringify(formattedResult));
         } catch (error) {
@@ -272,7 +287,9 @@ program
             License: -1,
             License_Latency: -1,
             PR_Code_Reviews: -1,
-            PR_Code_Reviews_Latency: -1
+            PR_Code_Reviews_Latency: -1,
+            DependencyMetric: -1,
+            DependencyMetric_Latency: -1
           };
           console.log(JSON.stringify(emptyResult));
         }

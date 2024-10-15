@@ -1,26 +1,11 @@
-import axios from "axios";
-
-// Assuming parseGitHubUrl and logger are defined elsewhere in your project
-import { parseGitHubUrl } from '../url'; // Adjust the import path accordingly
+import axios from 'axios';
 import logger from '../logger'; // Adjust the import path accordingly
+import { get_axios_params, getToken } from '../url'; // Adjust the import path accordingly
+import semver from 'semver';
 
-/**
- * Generates Axios parameters including owner, repo, and headers.
- * @param url GitHub repository URL.
- * @param token GitHub Personal Access Token.
- * @returns An object containing owner, repo, and headers.
- */
-export function get_axios_params(
-  url: string,
-  token: string
-): { owner: string; repo: string; headers: any } {
-  const { owner, repo } = parseGitHubUrl(url);
-  const headers = {
-    Authorization: `token ${token}`,
-    Accept: "application/vnd.github.v3+json",
-  };
-  logger.debug("Generated axios parameters", { owner, repo });
-  return { owner, repo, headers };
+interface DependencyResult {
+  score: number;
+  latency: number;
 }
 
 /**
@@ -29,9 +14,22 @@ export function get_axios_params(
  * @returns True if the version is pinned, false otherwise.
  */
 function isVersionPinned(version: string): boolean {
-  // Regex to match versions like ^2.3.x, ~2.3.*, 2.3.4, 2.3.x, etc.
-  const PINNED_VERSION_REGEX = /^(\^|~)?\d+\.\d+(\.\d+|\.\*|\.x)?$/;
-  return PINNED_VERSION_REGEX.test(version.trim());
+  try {
+    const range = new semver.Range(version);
+    const [semverSet] = range.set;
+
+    // Check if the range is pinned to at least major and minor
+    return semverSet.every((comparator) => {
+      return (
+        comparator.operator === '' &&
+        comparator.semver.major !== null &&
+        comparator.semver.minor !== null
+      );
+    });
+  } catch (error) {
+    logger.warn(`Invalid semver version: ${version}`, { error: (error as Error).message });
+    return false;
+  }
 }
 
 /**
@@ -40,23 +38,13 @@ function isVersionPinned(version: string): boolean {
  * @returns The fraction of dependencies that are pinned. Returns 1.0 if there are no dependencies.
  */
 function calculatePinningScore(dependencies: { [key: string]: string }): number {
-  const dependencyNames = Object.keys(dependencies);
-  const total = dependencyNames.length;
-
-  if (total === 0) {
+  const totalDependencies = Object.keys(dependencies).length;
+  if (totalDependencies === 0) {
     return 1.0;
   }
 
-  let pinnedCount = 0;
-
-  dependencyNames.forEach((dep) => {
-    const version = dependencies[dep];
-    if (isVersionPinned(version)) {
-      pinnedCount += 1;
-    }
-  });
-
-  return pinnedCount / total;
+  const pinnedDependencies = Object.values(dependencies).filter(isVersionPinned).length;
+  return pinnedDependencies / totalDependencies;
 }
 
 /**
@@ -73,16 +61,11 @@ async function _getDependencyPinningFractionFromPackageJson(
 ): Promise<number | null> {
   try {
     const packageJsonUrl = `https://api.github.com/repos/${owner}/${repo}/contents/package.json`;
-    const packageResponse = await axios.get(packageJsonUrl, {
-      headers: headers,
-    });
+    const packageResponse = await axios.get(packageJsonUrl, { headers });
 
     // Decode package.json content from base64
     if (packageResponse.data.content) {
-      const packageContent = Buffer.from(
-        packageResponse.data.content,
-        "base64"
-      ).toString("utf-8");
+      const packageContent = Buffer.from(packageResponse.data.content, 'base64').toString('utf-8');
       const packageJson = JSON.parse(packageContent);
 
       // Combine all dependencies
@@ -94,8 +77,7 @@ async function _getDependencyPinningFractionFromPackageJson(
       };
 
       // Calculate pinning score
-      const pinningScore: number = calculatePinningScore(allDependencies);
-
+      const pinningScore = calculatePinningScore(allDependencies);
       return pinningScore;
     }
 
@@ -110,18 +92,26 @@ async function _getDependencyPinningFractionFromPackageJson(
 /**
  * Fetches the dependency pinning fraction from package.json of a GitHub repository.
  * @param url GitHub repository URL.
- * @param token GitHub Personal Access Token.
- * @returns The dependency pinning score as a number between 0 and 1, or null if failed.
+ * @returns The dependency pinning score as a MetricResult object containing score and latency.
  */
-export async function getDependencyPinningFraction(
-  url: string,
-  token: string
-): Promise<number | null> {
+export async function getDependencyPinningFraction(url: string): Promise<DependencyResult> {
+  const startTime = Date.now();
+  logger.info('Starting Dependency Pinning calculation', { url });
+
   try {
+    const token = getToken(); // Fetch token internally
     const { owner, repo, headers } = get_axios_params(url, token);
-    return await _getDependencyPinningFractionFromPackageJson(owner, repo, headers);
+    const pinningScore = await _getDependencyPinningFractionFromPackageJson(owner, repo, headers);
+    const latency = Date.now() - startTime;
+
+    // Ensure pinningScore is a number
+    const score = pinningScore ?? 0;
+
+    logger.info('Dependency Pinning calculation complete', { url, score, latency });
+    return { score, latency };
   } catch (error: any) {
-    logger.error(`Error processing ${url}:`, error.message);
-    return null;
+    const latency = Date.now() - startTime;
+    logger.error(`Error calculating Dependency Pinning for ${url}:`, error.message);
+    return { score: 0, latency };
   }
 }

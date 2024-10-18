@@ -1,39 +1,46 @@
 import winston from 'winston';
-import path from 'path';
+import { appendFileSync, existsSync, truncateSync, PathLike } from "fs";
 import dotenv from 'dotenv';
-
 dotenv.config();
 
-const numericLogLevels: { [key: string]: number } = {
-  error: 0,
-  warn: 1,
-  info: 2,
-  http: 3,
-  verbose: 4,
-  debug: 5
+const LOG_LEVELS = {
+  SILENT: 0,
+  INFO: 1,
+  DEBUG: 2,
 };
 
-type LogLevel = keyof typeof numericLogLevels | number;
+//clear log file
 
-function getLogLevel(level: LogLevel): string {
-  if (typeof level === 'string') {
-    return level in numericLogLevels ? level : 'info';
+const logFilePath = process.env.LOG_FILE as PathLike;
+truncateSync(logFilePath, 0);
+truncateSync('logs/error.log', 0);
+
+function checkLogFilePath() {
+  if (!logFilePath || !existsSync(logFilePath)) {
+    console.error("LOG_FILE does not exist or is not set");
+    process.exit(1);
   }
-  const numLevel = typeof level === 'number' ? level : parseInt(level, 10);
-  const stringLevel = Object.keys(numericLogLevels).find(key => numericLogLevels[key] === numLevel);
-  return stringLevel || 'info';  // Default to 'info' if no match found
 }
 
-const logLevel = getLogLevel(process.env.LOG_LEVEL as LogLevel || 'info');
+// set log level
+// if LOG_LEVEL is not set, default to SILENT
+let logLevel = process.env.LOG_LEVEL;
+console.log("LOG_LEVEL: ", logLevel);
+
+switch (logLevel) {
+  case String(LOG_LEVELS.INFO):
+    logLevel = 'info';
+    break;
+  case String(LOG_LEVELS.DEBUG):
+    logLevel = 'debug';
+    break;
+  default:
+    logLevel = 'silent';
+}
+
+console.log("LOG_LEVEL: string", logLevel);
+
 const logFile = process.env.LOG_FILE || 'logs/package-evaluator.log';
-
-// Ensure the logs directory exists
-import fs from 'fs';
-const dir = path.dirname(logFile);
-if (!fs.existsSync(dir)){
-    fs.mkdirSync(dir, { recursive: true });
-}
-
 // Create logger
 const logger = winston.createLogger({
   level: logLevel,
@@ -45,10 +52,13 @@ const logger = winston.createLogger({
   ),
   defaultMeta: { service: 'package-evaluator' },
   transports: [
+    //silent console transport
+    new winston.transports.Console({ silent: (logLevel === 'silent' || logLevel === 'info' || logLevel === 'debug') }),
     // Write to all logs with level `info` and below to `package-evaluator.log`
-    new winston.transports.File({ filename: logFile }),
+    new winston.transports.File({ silent: logLevel === 'silent', filename: logFile , level: 'info' }),
     // Write all logs error (and below) to `error.log`
-    new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+    new winston.transports.File({ silent: logLevel === 'silent', filename: 'logs/error.log', level: 'debug' }),
   ],
 });
+
 export default logger;

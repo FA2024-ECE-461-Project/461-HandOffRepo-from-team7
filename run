@@ -1,9 +1,4 @@
 #!/usr/bin/env node
-
-// Set up environment variables
-process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'info';
-process.env.LOG_FILE = process.env.LOG_FILE || 'logs/package-evaluator.log';
-
 if (process.argv[2] === 'install') {
     const { spawnSync } = require('child_process');
     console.log('Installing dependencies...');

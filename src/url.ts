@@ -2,6 +2,7 @@ import * as dotenv from 'dotenv';
 import axios from 'axios';
 import * as responsive from './metrics/responsiveness';
 import logger from './logger';  // Import the logger
+import { get } from 'http';
 
 dotenv.config();
 
@@ -296,5 +297,45 @@ export async function getCommitsAndContributors(owner: string, repo: string, hea
     } catch (error) {
         logger.error('Error fetching commits and contributors', { owner, repo, error: (error as Error).message });
         return { commits: [], contributors: [] };
+    }
+}
+
+export async function getCodeReviewLines(owner: string, repo: string, headers: any) {
+    logger.debug('Calculating number of lines that were code reviewed', { owner, repo });
+    try {
+        const Pulls = await axios.get(`https://api.github.com/repos/${owner}/${repo}/pulls?state=all&per_page=100`, { headers });
+        let totalLinesAdded = 0;
+        let reviewedLinesAdded = 0;
+        
+        if(Pulls.data.length == 0) {
+            logger.warn('No pull requests found', { owner, repo });
+            return 0;
+        }
+        
+        for (const pull of Pulls.data) {
+            const prData = await axios.get(`https://api.github.com/repos/${owner}/${repo}/pulls/${pull.number}`, { headers });
+            totalLinesAdded += prData.data.additions;
+
+            const reviewsUrl = `https://api.github.com/repos/${owner}/${repo}/pulls/${pull.number}/reviews`;
+            const reviews = await axios.get(reviewsUrl, {headers});
+
+            if (reviews.data.length > 0) {
+                // If the PR has reviews, add its additions to the reviewed lines count
+                reviewedLinesAdded += prData.data.additions;
+            }
+        }
+        if (totalLinesAdded == 0) {
+            logger.warn('No lines added found', { owner, repo });
+            return 0;
+        }
+        if (reviewedLinesAdded == 0) {
+            logger.warn('No lines reviewed found', { owner, repo });
+            return 0;
+        }
+        const ratioReviewedLinesAdded = (reviewedLinesAdded / totalLinesAdded);
+        logger.debug('Calculated values for lines that were code reviewed', { owner, repo, reviewedLinesAdded, totalLinesAdded, ratioReviewedLinesAdded });
+        return ratioReviewedLinesAdded;
+    } catch (error) {
+        logger.error('Error calculating number of lines added through code reviews', { owner, repo, error: (error as Error).message });
     }
 }
